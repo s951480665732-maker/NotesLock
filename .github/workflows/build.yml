@@ -23,11 +23,37 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      - name: Find project
+        id: project
+        shell: bash
+        run: |
+          # Если вместо файлов загружен zip, распаковываем его
+          if [ ! -f settings.gradle ]; then
+            n=0
+            for z in *.zip; do
+              if [ -f "$z" ]; then n=$((n+1)); mkdir -p "_unzipped/$n"; unzip -oq "$z" -d "_unzipped/$n"; fi
+            done
+          fi
+          if [ -f settings.gradle ]; then
+            found=.
+          else
+            found=$(find . -name settings.gradle -not -path './.git/*' -printf '%h\n')
+          fi
+          if [ -z "$found" ] || [ "$(echo "$found" | wc -l)" -ne 1 ] || [ ! -f "$found/app/build.gradle" ]; then
+            echo "::error::Нужна ровно одна папка с settings.gradle и app/build.gradle. Список файлов ниже."
+            echo "Найдено settings.gradle в: ${found:-нигде}"
+            find . -type f -not -path './.git/*'
+            exit 1
+          fi
+          echo "Проект: $found"
+          echo "dir=$found" >> "$GITHUB_OUTPUT"
+
       - name: Build debug APK
+        working-directory: ${{ steps.project.outputs.dir }}
         run: gradle :app:assembleDebug --no-daemon --stacktrace
 
       - uses: actions/upload-artifact@v6
         with:
           name: NotesLock-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ steps.project.outputs.dir }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
